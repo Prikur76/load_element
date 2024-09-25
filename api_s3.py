@@ -97,7 +97,8 @@ class S3Client:
             logger.error(f'Error getting metadata for {obj_name}: {e}')
         return metadata
 
-    def create_object(self, bucket_name: str, object_name: str, content: str) -> bool:
+    def create_object(
+            self, bucket_name: str, object_name: str, content: str) -> bool:
         """
         Create an S3 object.
 
@@ -120,7 +121,8 @@ class S3Client:
             return False
         return True
 
-    def upload_object(self, bucket_name: str, file_path: str, prefix: str = '') -> bool:
+    def upload_object(
+            self, bucket_name: str, file_path: str, prefix: str = '') -> bool:
         """
         Upload a file to an S3 bucket.
 
@@ -176,7 +178,8 @@ class S3Client:
             return False
         return True
 
-    def download_object(self, bucket_name: str, object_key: str, target_path: str) -> bool:
+    def download_object(self, bucket_name: str, object_key: str,
+                        target_path: str) -> bool:
         """Download an S3 object.
 
         Args:
@@ -195,7 +198,9 @@ class S3Client:
             return False
         return True
 
-    def create_presigned_url(self, bucket_name: str, object_name: str, expiration: int = 3600) -> str | None:
+    def create_presigned_url(
+            self, bucket_name: str, object_name: str,
+            expiration: int = 3600) -> str | None:
         try:
             with self.get_client() as client:
                 presigned_url = client.generate_presigned_url(
