@@ -62,9 +62,9 @@ def main() -> None:
         timestamp = pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
         payments_df['timestamp'] = timestamp
         payments_filename = os.path.join(
-            data_folder, f'payments_{start_date}_{timestamp}.csv')
+            data_folder,
+            f'payments_{start_date.replace("-", "")}_{timestamp}.csv')
         payments_df.to_csv(payments_filename, index=False, encoding='utf-8')
-
         # Extract all contracts
         drivers = element_client.list_drivers()
         drivers_ids = [
