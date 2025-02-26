@@ -6,11 +6,10 @@ env.read_env()
 
 S3_CONFIG = {
     'aws_access_key_id': env.str('AWS_ACCESS_KEY_ID'),
-    'aws_secret_access_key': env.str('AWS_SECRET_ACCESS_KEY'),
-    'endpoint_url': env.str('S3_ENDPOINT_URL'),
-    'region_name': env.str('REGION_NAME')
+    'aws_secret_access_key': env.str('AWS_SECRET_ACCESS_KEY')    
 }
 S3_BUCKET = env.str('BUCKET_NAME', default='my-bucket')
+S3_BUCKET_DIRECT = env.str('BUCKET_NAME_DIRECT', default='my-bucket-direct')
 
 element_params = {
     'username': env.str('LOGIN'),
