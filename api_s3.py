@@ -6,10 +6,10 @@ https://boto3.amazonaws.com/v1/documentation/api/latest/guide/s3-examples.html
 
 import os
 import boto3
+
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from contextlib import contextmanager
-
 from app_logger import get_logger
 
 logger = get_logger(__name__)
@@ -23,12 +23,12 @@ class S3Client:
         :param config: Configuration for the S3 client
         """
         self.config = config
-        self.config['config'] = Config(s3={'addressing_style': 'path'})
+        self.config["config"] = Config(s3={"addressing_style": "path"})
 
     @contextmanager
     def get_client(self):
         """Context manager to interact with S3 client"""
-        s3_client = boto3.client('s3', **self.config)
+        s3_client = boto3.client("s3", **self.config)
         try:
             yield s3_client
         finally:
@@ -47,7 +47,7 @@ class S3Client:
             with self.get_client() as s3_client:
                 s3_client.create_bucket(Bucket=bucket_name)
         except Exception as e:
-            logger.error(f'Error creating bucket: {e}')
+            logger.error(f"Error creating bucket: {e}")
             return False
         return True
 
@@ -56,8 +56,8 @@ class S3Client:
         buckets = []
         with self.get_client() as client:
             response = client.list_buckets()
-            if 'Buckets' in response:
-                buckets = [bucket['Name'] for bucket in response['Buckets']]
+            if "Buckets" in response:
+                buckets = [bucket["Name"] for bucket in response["Buckets"]]
         return buckets
 
     def delete_bucket(self, bucket_name: str) -> bool:
@@ -74,7 +74,7 @@ class S3Client:
             with self.get_client() as client:
                 client.delete_bucket(Bucket=bucket_name)
         except Exception as e:
-            logger.error(f'Error deleting bucket {bucket_name}: {e}')
+            logger.error(f"Error deleting bucket {bucket_name}: {e}")
             return False
         return True
 
@@ -83,8 +83,8 @@ class S3Client:
         objects = []
         with self.get_client() as client:
             response = client.list_objects(Bucket=bucket_name)
-            if 'Contents' in response:
-                objects = [obj['Key'] for obj in response['Contents']]
+            if "Contents" in response:
+                objects = [obj["Key"] for obj in response["Contents"]]
         return objects
 
     def get_object_metadata(self, bucket_name: str, obj_name: str) -> dict:
@@ -94,7 +94,7 @@ class S3Client:
             with self.get_client() as client:
                 metadata = client.head_object(Bucket=bucket_name, Key=obj_name)
         except Exception as e:
-            logger.error(f'Error getting metadata for {obj_name}: {e}')
+            logger.error(f"Error getting metadata for {obj_name}: {e}")
         return metadata
 
     def create_object(
@@ -122,7 +122,7 @@ class S3Client:
         return True
 
     def upload_object(
-            self, bucket_name: str, file_path: str, prefix: str = '') -> bool:
+            self, bucket_name: str, file_path: str, prefix: str = "") -> bool:
         """
         Upload a file to an S3 bucket.
 
@@ -135,18 +135,18 @@ class S3Client:
         """
         object_name = os.path.basename(file_path)
         try:
-            with self.get_client() as client, open(file_path, 'rb') as file:
+            with self.get_client() as client, open(file_path, "rb") as file:
                 if prefix:
-                    object_name = f'{prefix}{object_name}'
+                    object_name = f"{prefix}/{object_name}"
                 client.upload_fileobj(file, bucket_name, object_name)
         except Exception as e:
-            logger.error(f'Error uploading {object_name}: {e}')
+            logger.error(f"Error uploading {object_name}: {e}")
             return False
         return True
 
     def copy_object(self, source_bucket: str, dest_bucket: str,
                     source_key: str, dest_key: str) -> bool:
-        copy_source = {'Bucket': source_bucket, 'Key': source_key}
+        copy_source = {"Bucket": source_bucket, "Key": source_key}
         try:
             with self.get_client() as client:
                 client.copy_object(
@@ -155,7 +155,7 @@ class S3Client:
                     CopySource=copy_source
                 )
         except Exception as e:
-            logger.error(f'Error copying object: {e}')
+            logger.error(f"Error copying object: {e}")
             return False
         return True
 
@@ -191,7 +191,7 @@ class S3Client:
             bool: True if object downloaded, else False.
         """
         try:
-            with self.get_client() as client, open(target_path, 'wb') as file:
+            with self.get_client() as client, open(target_path, "wb") as file:
                 client.download_fileobj(bucket_name, object_key, file)
         except ClientError as e:
             logger.error(f"Error downloading object {object_key}: {e}")
@@ -204,8 +204,8 @@ class S3Client:
         try:
             with self.get_client() as client:
                 presigned_url = client.generate_presigned_url(
-                    'get_object',
-                    Params={'Bucket': bucket_name, 'Key': object_name},
+                    "get_object",
+                    Params={"Bucket": bucket_name, "Key": object_name},
                     ExpiresIn=expiration)
         except ClientError as e:
             logger.error(e)

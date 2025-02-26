@@ -1,167 +1,134 @@
+import concurrent
+
+import time
 import pandas as pd
 
-from requests.sessions import Session
+from requests import HTTPError, Session
+from requests.exceptions import RequestException
 from datetime import timedelta
-from contextlib import contextmanager
 from urllib.parse import urljoin
+
+from app_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ElementClient:
     def __init__(
-            self, element_username: str, element_password: str,
-            element_base_url: str) -> None:
-        """
-        Initialize the Element client with the given parameters
-
-        :param element_username: Element service username
-        :param element_password: Element service password
-        :param element_base_url: Element service base URL
-        """
+        self, element_username: str, element_password: str,
+        element_base_url: str, max_retries: int = 3,
+        backoff_factor: float = 0.5, timeout: tuple = (5, 30)
+    ) -> None:
         self.username = element_username
         self.password = element_password
         self.base_url = element_base_url
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor  # Экспоненциальная задержка между попытками
+        self.timeout = timeout  # (connection_timeout, read_timeout)
+        self._session = self._create_session()
 
-    @contextmanager
-    def get_session(self):
-        """Context manager to interact with Element client"""
-        element_session = Session()
-        element_session.auth = (self.username, self.password)
-        element_session.headers.update({'Content-Type': 'application/json'})
-        try:
-            yield element_session
-        finally:
-            element_session = None
+    def _create_session(self) -> Session:
+        session = Session()
+        session.auth = (self.username, self.password)
+        session.headers.update({"Content-Type": "application/json"})
+        return session
+
+    def _request(self, method, url, **kwargs):
+        retries = 0
+        kwargs.setdefault("timeout", self.timeout)
+        while retries <= self.max_retries:
+            try:
+                response = self._session.request(method, url, **kwargs)
+                response.raise_for_status()
+                return response
+            except (RequestException, HTTPError) as e:
+                retries += 1
+                if retries > self.max_retries:
+                    raise RequestException(f"Failed after {self.max_retries} retries") from e
+                wait = self.backoff_factor * (2 ** (retries - 1))
+                logger.warning(f"Request failed: {e}. Retrying in {wait:.1f}s...")
+                time.sleep(wait)
 
     def list_cars(self) -> list:
-        """
-        Return list of cars from Element service
-        """
-        url = urljoin(self.base_url, 'Car/v1/Get')
-        with self.get_session() as session:
-            response = session.get(url, stream=True)
-            response.raise_for_status()
-            cars = response.json()
-        return cars
+        url = urljoin(self.base_url, "Car/v1/Get")
+        response = self._request("GET", url)
+        return response.json()
 
     def list_drivers(
-            self, ID: str = None, FIO: str = None,
-            PhoneNumber: str = None, Status: str = None,
-            DetailBalance: bool = False,
-            FireDateFrom: str = None,
-            FireDateTo: str = None) -> list:
-        """
-        Return list of drivers from Element service
-
-        Filters:
-            driver_id: Driver ID
-            full_name: Driver full name
-            phone_number: Driver phone number
-            status: Driver status (Временно не работает, Кандидат, Отказ СБ, Работает, Уволен)
-            include_balance_details: Include driver balance details in response
-            dismissal_date_from: Driver dismissal date from
-            dismissal_date_to: Driver dismissal date to
-
-        """
-        url = urljoin(self.base_url, 'Driver/v1/Get')
-        args = locals()
-        del args['self']
-        del args['url']
-        payload = {key: value for key, value in args.items() if value} 
-        with self.get_session() as session:
-            response = session.post(url, json=payload, stream=True)
-            response.raise_for_status()
-            drivers = response.json()
-        return drivers
+        self, **filters
+    ) -> list:
+        url = urljoin(self.base_url, "Driver/v1/Get")
+        payload = {k: v for k, v in filters.items() if v is not None}
+        response = self._request("POST", url, json=payload)
+        return response.json()
 
     def list_companies(self) -> list:
-        """
-        Return list of companies from Element service
-        """
-        url = urljoin(self.base_url, 'Company/v1/Get')
-        with self.get_session() as session:
-            response = session.get(url, stream=True)
-            response.raise_for_status()
-            companies = response.json()
-        return companies
+        url = urljoin(self.base_url, "Company/v1/Get")
+        response = self._request("GET", url)
+        return response.json()
 
-    def fetch_daily_payments(self, start_date: str, end_date: str) -> list:
-        """
-        Return list of daily payments from Element service
-
-        Args:
-            start_date: str = 'yyyy-mm-dd'  # or 'yyyy-mm-ddThh:mm:ss' format
-            end_date: str = 'yyyy-mm-dd'  # or 'yyyy-mm-ddThh:mm:ss' format
-
-        Returns:
-            list: List of daily payments
-        """
-        url = urljoin(self.base_url, 'Reports/GetDocuments')
-        payload = {
-            'ДатаНачала': start_date,
-            'ДатаОкончания': end_date
-        }
-        with self.get_session() as session:
-            response = session.post(url, json=payload, stream=True)
-            response.raise_for_status()
-            payments = response.json()
-        return payments
-
-    def fetch_payments_for_period(
-            self, start_date: str, end_date: str) -> list | None:
-        """
-        Fetch all daily payments for the given period
-
-        Args:
-            start_date: str = 'yyyy-mm-dd' format
-            end_date: str = 'yyyy-mm-dd' format
-        Returns:
-            list | None
-        """
-        dates = pd.date_range(start=start_date, end=end_date, freq='D')
+    def fetch_daily_payments(
+        self, start_date: str, end_date: str, page_size=1000, page=1
+    ) -> list:
+        url = urljoin(self.base_url, "Reports/GetDocuments")
+        dates = pd.date_range(start=start_date, end=end_date, freq="D")
+        if len(dates) <= 2:
+            payload = {
+                "ДатаНачала": start_date,
+                "ДатаОкончания": end_date,
+                "Page": page,
+                "PageSize": page_size
+            }
+            response = self._request("POST", url, json=payload)
+            return response.json()
         payments = []
         for date in dates:
-            start = date.strftime('%Y-%m-%d')
-            end = (date + timedelta(days=1)).strftime('%Y-%m-%d')
-            daily_payments = self.fetch_daily_payments(start, end)
-            payments.extend(daily_payments)
+            start = date.strftime("%Y-%m-%d")
+            end = (date + timedelta(days=1)).strftime("%Y-%m-%d")
+            payload = {
+                "ДатаНачала": start,
+                "ДатаОкончания": end,
+                "Page": page,
+                "PageSize": page_size
+            }
+            response = self._request("POST", url, json=payload)
+            payments.extend(response.json())
         return payments if payments else None
 
-    def fetch_contracts_by_driver_id(self, driver_id: str) -> list:
-        """
-        Return list of contracts by driver from Element service
-        """
-        url = urljoin(self.base_url, 'Driver/GetContractsDriver')
-        with self.get_session() as session:
-            response = session.post(url, json={'ID': driver_id}, stream=True)
-            response.raise_for_status()
-            contracts = response.json()
-        return contracts
-
-    def fetch_all_contracts(self, drivers_ids: list) -> list:
-        """
-        Return list of all contracts for all drivers from Element service
-        """
+    def fetch_all_contracts(
+        self, drivers_ids: list, chunk_size=100
+    ) -> list:
         contracts = []
-        for num, id in enumerate(drivers_ids, start=1):
-            # print(f'Fetching contracts for driver {num}/{len(drivers_ids)}...')
-            driver_contracts = self.fetch_contracts_by_driver_id(id)
-            if driver_contracts:
-                contracts_with_id = [
-                    {'DriverID': id, **contract}
-                    for contract in driver_contracts
+        total = len(drivers_ids)
+        for i in range(0, total, chunk_size):
+            chunk = drivers_ids[i:i+chunk_size]
+            responses = []
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                futures = [
+                    executor.submit(self._fetch_contracts_for_driver, driver_id)
+                    for driver_id in chunk
                 ]
-                contracts.extend(contracts_with_id)
-                # print(f'Found {len(driver_contracts)} contracts.')
+                for future in concurrent.futures.as_completed(futures):
+                    try:
+                        responses.append(future.result())
+                    except Exception as e:
+                        logger.error(f"Error fetching contracts: {e}")
+
+            for driver_id, contracts_data in zip(chunk, responses):
+                if contracts_data:
+                    contracts.extend([{
+                        "DriverID": driver_id,
+                        **contract
+                    } for contract in contracts_data])
+            logger.info(f"Processed {i+chunk_size}/{total} drivers")
+
         return contracts
 
-
-# Extract all payments
-# logger.info('Fetching all payments...')
-# start_time = time.time()
-# start_date = '2024-09-01'
-# end_date = '2024-09-30'
-# payments = client.fetch_all_payments(start_date, end_date)
-# df_payments = pd.DataFrame(payments)
-# df_payments['timestamp'] = pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
-# filename = os.path.join(target_folder, f'payments_{start_date}_{timestamp}.csv')
-# df_payments.to_csv(filename, index=False, encoding='utf-8')
+    def _fetch_contracts_for_driver(self, driver_id: str) -> list:
+        url = urljoin(self.base_url, "Driver/GetContractsDriver")
+        try:
+            response = self._request("POST", url, json={"ID": driver_id})
+            return response.json()
+        except RequestException as e:
+            logger.error(f"Failed to fetch contracts for {driver_id}: {e}")
+            return []
