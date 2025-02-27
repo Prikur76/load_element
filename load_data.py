@@ -86,6 +86,7 @@ def main() -> None:
         # Drivers
         drivers = element_client.list_drivers()
         drivers_df = pd.DataFrame(drivers)
+        drivers_df["timestamp"] = timestamp        
         upload_df(drivers_df, "drivers")
         
         # Phones
@@ -98,15 +99,18 @@ def main() -> None:
         
         # Cars
         cars_df = pd.DataFrame(element_client.list_cars())
+        cars_df["timestamp"] = timestamp
         upload_df(cars_df, "cars")
         
         # Companies
         companies_df = pd.DataFrame(element_client.list_companies())
+        companies_df["timestamp"] = timestamp
         upload_df(companies_df, "companies")
         
         # Payments
         payments = element_client.fetch_daily_payments(start_date, pd.Timestamp.now().strftime("%Y-%m-%d"))
         payments_df = pd.DataFrame(payments)
+        payments_df["timestamp"] = timestamp
         upload_df(payments_df, f'payments_{start_date.replace("-", "")}')
         
         # Contracts
@@ -117,6 +121,7 @@ def main() -> None:
         ]
         contracts = element_client.fetch_all_contracts(valid_drivers["ID"].tolist())
         contracts_df = pd.DataFrame(contracts)
+        contracts_df["timestamp"] = timestamp
         upload_df(contracts_df, "contracts")
 
         # Parallel upload
